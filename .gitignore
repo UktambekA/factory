@@ -1,0 +1,9 @@
+# Environment and secrets
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+*.egg-info/

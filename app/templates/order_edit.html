@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Edit Order #{{ order.id }} – The Chocolate Factory{% endblock %}
+{% block content %}
+  <h1 class="mb-4">Edit Order #{{ order.id }}</h1>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <div class="card" style="max-width: 480px;">
+    <div class="card-body">
+      <form action="/orders/{{ order.id }}/edit" method="post" class="row g-3">
+        <div class="col-12">
+          <label class="form-label">Product</label>
+          <select name="product_id" class="form-select" required>
+            {% for p in finished_products %}
+            <option value="{{ p.id }}" {% if p.id == order.product_id %}selected{% endif %}>{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Quantity (units)</label>
+          <input type="number" name="quantity" class="form-control" step="1" min="1"
+                 value="{{ "%.0f"|format(order.quantity) }}" required>
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Save</button>
+          <a href="/orders" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

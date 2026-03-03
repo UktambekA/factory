@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./venv/Scripts/python.exe -c \":*)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 151896 /F)",
+      "Bash(cmd /c \"taskkill /PID 151896 /F\")",
+      "Bash(cmd /c \"taskkill /F /PID 151896 2>&1\")",
+      "Bash(cmd /c \"taskkill /IM uvicorn.exe /F 2>&1\")",
+      "Bash(cmd /c \"taskkill /IM python.exe /F 2>&1\")",
+      "Bash(powershell -Command \"Stop-Process -Id 151896 -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; \\(netstat -ano | Select-String '':8000.*LISTENING''\\).Count\")"
+    ]
+  }
+}
