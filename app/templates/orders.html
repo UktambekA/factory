@@ -4,13 +4,26 @@
 {% block content %}
   <h1 class="mb-4">Manufacturing Orders</h1>
 
+  {% if produced %}
+  <div class="alert alert-success alert-dismissible fade show" role="alert">
+    Production completed successfully. Stock updated.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+
   <div class="card mb-4">
     <div class="card-header">Create new order</div>
     <div class="card-body">
       <form action="/orders" method="post" class="row g-3">
         <div class="col-auto">
           <label class="form-label">Product</label>
-          <select name="product_id" class="form-select" required>
+          <select name="product_id" id="product_id" class="form-select" required>
             <option value="">Select product</option>
             {% for p in finished_products %}
             <option value="{{ p.id }}">{{ p.name }}</option>
@@ -19,14 +32,44 @@
         </div>
         <div class="col-auto">
           <label class="form-label">Quantity (units)</label>
-          <input type="number" name="quantity" class="form-control" step="1" min="1" value="1" required>
+          <input type="number" name="quantity" id="quantity" class="form-control" step="1" min="1" value="1" required>
         </div>
         <div class="col-auto d-flex align-items-end">
           <button type="submit" class="btn btn-primary">Create order</button>
         </div>
       </form>
+      <div id="bom-preview" class="mt-3" style="display:none;">
+        <strong>Required ingredients:</strong>
+        <ul id="bom-list" class="mb-0 mt-1"></ul>
+      </div>
     </div>
   </div>
+
+  <script>
+    const BOM = {{ bom_json | safe }};
+    const sel = document.getElementById('product_id');
+    const qty = document.getElementById('quantity');
+    const preview = document.getElementById('bom-preview');
+    const list = document.getElementById('bom-list');
+
+    function updatePreview() {
+      const pid = parseInt(sel.value);
+      const q = parseFloat(qty.value) || 1;
+      const items = BOM[pid];
+      if (!pid || !items || items.length === 0) { preview.style.display = 'none'; return; }
+      list.innerHTML = items.map(i => {
+        const needed = i.qty_per_unit * q;
+        const ok = i.stock >= needed;
+        const cls = ok ? 'text-success' : 'text-danger';
+        const icon = ok ? '✓' : '✗';
+        return `<li class="${cls}">${icon} ${i.name}: ${needed.toFixed(1)}g needed (available: ${i.stock.toFixed(1)}g)</li>`;
+      }).join('');
+      preview.style.display = 'block';
+    }
+
+    sel.addEventListener('change', updatePreview);
+    qty.addEventListener('input', updatePreview);
+  </script>
 
   <div class="card">
     <div class="card-header">All orders</div>
@@ -43,6 +86,7 @@
           </tr>
         </thead>
         <tbody>
+          {% if orders %}
           {% for o in orders %}
           <tr>
             <td>{{ o.id }}</td>
@@ -55,10 +99,20 @@
               <span class="badge bg-success">done</span>
               {% else %}
               <a href="/orders/{{ o.id }}/edit" class="btn btn-sm btn-outline-secondary">Edit</a>
+              <form action="/orders/{{ o.id }}/produce" method="post" class="d-inline ms-1">
+                <button type="submit" class="btn btn-sm btn-primary">Produce</button>
+              </form>
               {% endif %}
             </td>
           </tr>
           {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              No orders yet. Use the form above to create one.
+            </td>
+          </tr>
+          {% endif %}
         </tbody>
       </table>
     </div>

@@ -1,4 +1,5 @@
 """FastAPI routes for products, BoM, manufacturing orders, and produce action."""
+import json
 from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -29,12 +30,22 @@ def index(request: Request, db: Session = Depends(get_db)):
             .limit(50)
         )
     ).scalars().all()
+    draft_count = sum(1 for o in orders if o.status == "draft")
+    low_stock = [p for p in products if p.product_type == "ingredient" and p.stock_on_hand < 100]
     error = request.query_params.get("error")
     if error:
         error = unquote(error)
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "products": products, "orders": orders, "produced": request.query_params.get("produced"), "error": error},
+        {
+            "request": request,
+            "products": products,
+            "orders": orders,
+            "draft_count": draft_count,
+            "low_stock_count": len(low_stock),
+            "produced": request.query_params.get("produced"),
+            "error": error,
+        },
     )
 
 
@@ -51,9 +62,30 @@ def orders_page(request: Request, db: Session = Depends(get_db)):
     finished_products = db.execute(
         select(Product).where(Product.product_type == "finished_good").order_by(Product.name)
     ).scalars().all()
+    bom_data = {
+        p.id: [
+            {
+                "name": b.component.name,
+                "qty_per_unit": b.quantity_per_unit,
+                "stock": b.component.stock_on_hand,
+            }
+            for b in p.bom_components
+        ]
+        for p in finished_products
+    }
+    error = request.query_params.get("error")
+    if error:
+        error = unquote(error)
     return templates.TemplateResponse(
         "orders.html",
-        {"request": request, "orders": orders, "finished_products": finished_products},
+        {
+            "request": request,
+            "orders": orders,
+            "finished_products": finished_products,
+            "bom_json": json.dumps(bom_data),
+            "produced": request.query_params.get("produced"),
+            "error": error,
+        },
     )
 
 
@@ -129,12 +161,22 @@ def execute_produce(mo_id: int, request: Request):
     """Trigger produce for a manufacturing order. Atomic transaction."""
     try:
         produce_order(mo_id)
-        return RedirectResponse(url="/?produced=1", status_code=303)
+        return RedirectResponse(url="/orders?produced=1", status_code=303)
     except (InsufficientStockError, ValueError) as e:
-        return RedirectResponse(url="/?error=" + quote(str(e)), status_code=303)
+        return RedirectResponse(url="/orders?error=" + quote(str(e)), status_code=303)
 
 
 # ----- Optional JSON API -----
+
+@router.get("/api/stats")
+def stats(db: Session = Depends(get_db)):
+    """Summary stats for navbar badge."""
+    from sqlalchemy import func as sqlfunc
+    draft_count = db.execute(
+        select(sqlfunc.count()).select_from(ManufacturingOrder).where(ManufacturingOrder.status == "draft")
+    ).scalar()
+    return {"draft_count": draft_count}
+
 
 @router.get("/api/products")
 def list_products(db: Session = Depends(get_db)):

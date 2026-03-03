@@ -5,11 +5,46 @@
   <h1 class="mb-4">Inventory</h1>
 
   {% if produced %}
-  <div class="alert alert-success">Production completed successfully. Stock updated.</div>
+  <div class="alert alert-success alert-dismissible fade show" role="alert">
+    Production completed successfully. Stock updated.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
   {% endif %}
   {% if error %}
-  <div class="alert alert-danger">{{ error }}</div>
+  <div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
   {% endif %}
+
+  <div class="row g-3 mb-4">
+    <div class="col-sm-4">
+      <div class="card text-center border-{{ 'warning' if draft_count > 0 else 'success' }}">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-{{ 'warning' if draft_count > 0 else 'success' }}">{{ draft_count }}</div>
+          <div class="text-muted small">Draft orders</div>
+          {% if draft_count > 0 %}<span class="badge bg-warning text-dark mt-2">Pending</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card text-center border-{{ 'danger' if low_stock_count > 0 else 'success' }}">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-{{ 'danger' if low_stock_count > 0 else 'success' }}">{{ low_stock_count }}</div>
+          <div class="text-muted small">Low stock ingredients</div>
+          {% if low_stock_count > 0 %}<span class="badge bg-danger mt-2">Attention!</span>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card text-center border-secondary">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-secondary">{{ products | length }}</div>
+          <div class="text-muted small">Total products</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="card mb-4">
     <div class="card-header">Products</div>
@@ -27,7 +62,10 @@
           <tr>
             <td>{{ p.name }}</td>
             <td><span class="badge bg-{{ 'secondary' if p.product_type == 'ingredient' else 'primary' }}">{{ p.product_type }}</span></td>
-            <td>{{ "%.1f"|format(p.stock_on_hand) }}{% if p.product_type == 'ingredient' %}g{% else %} units{% endif %}</td>
+            <td class="{{ 'text-danger fw-bold' if p.stock_on_hand == 0 else 'text-warning fw-semibold' if p.stock_on_hand < 100 and p.product_type == 'ingredient' else '' }}">
+              {{ "%.1f"|format(p.stock_on_hand) }}{% if p.product_type == 'ingredient' %}g{% else %} units{% endif %}
+              {% if p.stock_on_hand == 0 %}<span class="ms-1 badge bg-danger">Out of stock</span>{% elif p.stock_on_hand < 100 and p.product_type == 'ingredient' %}<span class="ms-1 badge bg-warning text-dark">Low</span>{% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -49,6 +87,7 @@
           </tr>
         </thead>
         <tbody>
+          {% if orders %}
           {% for o in orders %}
           <tr>
             <td>{{ o.id }}</td>
@@ -66,6 +105,13 @@
             </td>
           </tr>
           {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-center text-muted py-4">
+              No orders yet. <a href="/orders">Create one →</a>
+            </td>
+          </tr>
+          {% endif %}
         </tbody>
       </table>
     </div>
