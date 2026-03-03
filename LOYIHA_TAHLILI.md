@@ -23,10 +23,11 @@ Loyiha **Manufacturing Resource Planning (MRP)** tizimining minimal ishlashi mum
 
 | Modul | Vazifa |
 |-------|--------|
-| **Mahsulotlar (Products)** | Ingredientlar va tayyor mahsulotlar — nom va "Qoldiq (Stock on Hand)". |
-| **Materiallar ro‘yxati (BoM)** | "Qora shokolad"ni tarkibiy qismlariga (Kakao, Shakar) va har birining miqdoriga bog‘lash. |
-| **Ishlab chiqarish buyurtmasi (MO)** | X dona shokolad ishlab chiqarish buyurtmasi yaratish va **Produce** orqali bajarish. |
+| **Mahsulotlar (Products)** | Ingredientlar va tayyor mahsulotlar — nom va "Qoldiq (Stock on Hand)". `/products` sahifasida ro‘yxat; yangi ingredient qo‘shish/restock; yangi tayyor mahsulot yaratish (BoM bilan). |
+| **Materiallar ro‘yxati (BoM)** | Tayyor mahsulotni tarkibiy qismlariga va har birining miqdoriga bog‘lash. `/products/{id}/bom` orqali BoM qatorlarini qo‘shish/o‘chirish. |
+| **Ishlab chiqarish buyurtmasi (MO)** | X dona mahsulot ishlab chiqarish buyurtmasi yaratish; **Edit** orqali mahsulot va miqdorni tahrirlash; **Produce** orqali bajarish. |
 | **Produce jarayoni** | Zaxira yetarli bo‘lsa — ingredientlarni ayirib, tayyor mahsulot qo‘shish; yetarli bo‘lmasa — xato ko‘rsatish va hech qanday o‘zgarish kiritmaslik. |
+| **Buyurtmani tahrirlash (Edit)** | Draft buyurtmada mahsulot va miqdorni o‘zgartirish (`/orders/{id}/edit`). Produced buyurtmani tahrirlash mumkin emas. |
 
 ### 1.4 Dastlabki ma’lumotlar (Seed)
 
@@ -46,12 +47,15 @@ Loyiha **monolit** web-ilova: bitta FastAPI server ham API, ham HTML sahifalarni
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Brauzer (Bootstrap 5 UI)                                    │
+│  Brauzer (Bootstrap 5 UI, /api/stats orqali draft badge)    │
 └───────────────────────────┬─────────────────────────────────┘
                             │ HTTP GET/POST
 ┌───────────────────────────▼─────────────────────────────────┐
 │  FastAPI (app.main)                                          │
-│  ├── app.api.routes — sahifalar: /, /orders, /orders/{id}/produce
+│  ├── app.api.routes — sahifalar:                             │
+│  │     /, /orders, /orders/{id}/edit, /orders/{id}/produce   │
+│  │     /products, /products/new, /products/{id}/bom         │
+│  │     /api/stats, /api/products, /api/orders                │
 │  ├── app.services.produce_service — produce_order(mo_id)    │
 │  └── app.models — Product, BillOfMaterial, ManufacturingOrder│
 └───────────────────────────┬─────────────────────────────────┘
@@ -65,10 +69,10 @@ Loyiha **monolit** web-ilova: bitta FastAPI server ham API, ham HTML sahifalarni
 ### 2.2 Ma’lumotlar bazasi sxemasi va bog‘lanishlar
 
 - **products** — barcha mahsulotlar (ingredient yoki tayyor mahsulot). Har birida `name`, `product_type`, `stock_on_hand`.
-- **bill_of_materials** — BoM: qaysi tayyor mahsulot (`finished_product_id`) uchun qaysi komponent (`component_id`) va **bitta birlik uchun** necha o‘lchov (`quantity_per_unit`). Masalan: Qora shokolad → Kakao 50 g, Shakar 20 g.
-- **manufacturing_orders** — ishlab chiqarish buyurtmasi: qaysi mahsulotdan (`product_id`), nechta (`quantity`), holat (`draft` / `produced`), `created_at`, `produced_at`.
+- **bill_of_materials** — BoM: qaysi tayyor mahsulot (`finished_product_id`) uchun qaysi komponent (`component_id`) va **bitta birlik uchun** necha o‘lchov (`quantity_per_unit`).
+- **manufacturing_orders** — ishlab chiqarish buyurtmasi: `product_id`, `quantity`, holat (`draft` / `produced`), `created_at`, `produced_at`.
 
-BoM orqali **Product ↔ BillOfMaterial** bog‘lanishi: bitta tayyor mahsulot bir nechta BoM qatoriga ega bo‘lishi mumkin (har biri bitta komponent va miqdor bilan). Shuning uchun turli miqdorlar (50 g, 20 g va hokazo) to‘liq qo‘llab-quvvatlanadi.
+BoM orqali **Product ↔ BillOfMaterial** bog‘lanishi: bitta tayyor mahsulot bir nechta BoM qatoriga ega bo‘lishi mumkin.
 
 ### 2.3 "Produce" jarayoni (tranzaksiya va validatsiya)
 
@@ -76,32 +80,38 @@ BoM orqali **Product ↔ BillOfMaterial** bog‘lanishi: bitta tayyor mahsulot b
 
 1. **Tranzaksiya:** Barcha o‘zgarishlar `transactional_session()` kontekstida bajariladi. Har qanday istisno (xato) yuz berganda `rollback` — bazada hech narsa o‘zgarmaydi.
 2. **Buyurtmani yuklash:** MO, uning mahsuloti va shu mahsulotning BoM qatorlari (komponentlar bilan) birga olinadi.
-3. **Tekshiruvlar:**
-   - MO mavjudmi, allaqachon `produced` emasmi, `quantity > 0` mi?
-   - Mahsulotda BoM bormi?
-   - Har bir komponent uchun: `kerak = quantity_per_unit * mo.quantity`, `mavjud = component.stock_on_hand`. Agar `mavjud < kerak` bo‘lsa — `InsufficientStockError` (qisqacha shortfalls ro‘yxati bilan).
-4. **O‘zgarishlar (faqat barcha tekshiruvlar o‘tsa):**
-   - Har bir komponentning `stock_on_hand` dan kerak miqdor ayiriladi (keyin yana bir marta manfiy bo‘lishi tekshiriladi).
-   - Tayyor mahsulotning `stock_on_hand` ga `mo.quantity` qo‘shiladi.
-   - MO holati `produced`, `produced_at` yangilanadi.
-5. **Commit:** Faqat barcha qadamlar muvaffaqiyatli bo‘lsa tranzaksiya commit qilinadi; aks holda — rollback, inventar o‘zgarmaydi.
+3. **Tekshiruvlar:** MO mavjudmi, allaqachon `produced` emasmi, `quantity > 0` mi? Mahsulotda BoM bormi? Har bir komponent uchun zaxira yetarlimi — yetmasa `InsufficientStockError`.
+4. **O‘zgarishlar (faqat barcha tekshiruvlar o‘tsa):** komponentlardan ayirish, tayyor mahsulotga qo‘shish, MO holati `produced` va `produced_at` yangilanishi.
+5. **Commit** yoki **rollback.**
 
-Natija: **"Yoki hammasi, yoki hech narsa"** — yarim qolgan holat (masalan, shakar ayirildi, shokolad qo‘shilmadi) yuzaga kelmaydi.
+Natija: **"Yoki hammasi, yoki hech narsa"** — yarim qolgan holat yuzaga kelmaydi.
 
 ### 2.4 Web interfeys va foydalanuvchi oqimi
 
-- **`/` (Bosh sahifa):** Barcha mahsulotlar qoldig‘i va so‘nggi ishlab chiqarish buyurtmalari jadvali. Draft buyurtmalarda **Produce** tugmasi. Muvaffaqiyat/xato xabarlari `?produced=1` yoki `?error=...` orqali ko‘rsatiladi.
-- **`/orders`:** Barcha buyurtmalar ro‘yxati va **yangi buyurtma yaratish** formasi (mahsulot tanlash + miqdor). Yana shu yerdan **Produce** bosish mumkin.
-- **POST `/orders`:** Formadan `product_id` va `quantity` qabul qilinadi, yangi draft MO yaratiladi, `/orders` ga redirect.
-- **POST `/orders/{mo_id}/produce`:** `produce_order(mo_id)` chaqiriladi. Muvaffaqiyatda `/?produced=1`, xatoda `/?error=...` ga redirect (xabar URL-da kodlanadi va sahifada dekodlanib ko‘rsatiladi).
+- **`/` (Bosh sahifa):** Mahsulotlar qoldig‘i, so‘nggi ishlab chiqarish buyurtmalari jadvali. Draft buyurtmalarda **Edit** va **Produce** tugmalari. `draft_count`, `low_stock_count`; muvaffaqiyat/xato `?produced=1`, `?error=...`.
+- **`/orders`:** Barcha buyurtmalar ro‘yxati, yangi buyurtma yaratish formasi (mahsulot + miqdor). Draft uchun **Edit** va **Produce**. Muvaffaqiyat/xato `?produced=1`, `?error=...`. BoM ma’lumotlari (`bom_json`) frontendda ishlatilishi mumkin.
+- **GET `/orders/{mo_id}/edit`:** Buyurtmani tahrirlash sahifasi (faqat draft). Mahsulot tanlash va miqdor.
+- **POST `/orders/{mo_id}/edit`:** Buyurtmaning `product_id` va `quantity` ni yangilash (faqat draft). Xatoda `?error=...` bilan qayta shu sahifaga redirect.
+- **POST `/orders`:** Yangi draft MO yaratish, `/orders` ga redirect.
+- **POST `/orders/{mo_id}/produce`:** `produce_order(mo_id)`. Muvaffaqiyatda `/orders?produced=1`, xatoda `/orders?error=...`.
+- **`/products`:** Barcha mahsulotlar ro‘yxati; ingredient restock formasi; yangi tayyor mahsulot yaratishga link.
+- **`/products/new`:** Yangi tayyor mahsulot + inline BoM (komponent nomlari va miqdorlar) yaratish formasi.
+- **POST `/products/ingredient`:** Ingredient restock yoki yangi ingredient (nom + miqdor).
+- **POST `/products`:** Yangi tayyor mahsulot + BoM qatorlari (komponent nomi orqali topish/yaratish).
+- **`/products/{product_id}/bom`:** Shu mahsulotning BoM boshqaruvi — mavjud qatorlar, yangi komponent qo‘shish, qator o‘chirish.
+- **POST `/products/{product_id}/bom`:** BoM ga yangi qator qo‘shish.
+- **POST `/products/{product_id}/bom/{bom_id}/delete`:** BoM qatorini o‘chirish.
 
-Shuningdek, **ixtiyoriy JSON API:** `GET /api/products`, `GET /api/orders` — mahsulotlar va buyurtmalar ro‘yxati.
+**Navbar:** Stock (`/`), Products (`/products`), Orders (`/orders`) — Orders yonida draft buyurtmalar soni **badge** (JavaScript orqali `GET /api/stats`).
+
+**JSON API:** `GET /api/stats` (draft_count), `GET /api/products`, `GET /api/orders`.
 
 ### 2.5 Xatolarni qayta ishlash
 
-- **Zaxira yetarli emas:** `InsufficientStockError` — qaysi komponentda qancha kerak, qancha bor ekani xabarda va shortfalls ro‘yxatida. Redirect orqali foydalanuvchiga ko‘rsatiladi.
-- **Buyurtma topilmadi / allaqachon bajarilgan / miqdor noto‘g‘ri:** `ValueError` — xabar redirect orqali sahifada chiqadi.
-- **Forma validatsiyasi:** Miqdor musbat emas yoki mahsulot topilmasa HTTP 400/404 va xabar.
+- **Zaxira yetarli emas:** `InsufficientStockError` — redirect `/orders?error=...`, xabar sahifada ko‘rsatiladi.
+- **Buyurtma topilmadi / allaqachon bajarilgan / miqdor noto‘g‘ri:** `ValueError` — redirect `/orders?error=...`.
+- **Edit:** Produced buyurtmani tahrirlash mumkin emas (400). Miqdor musbat emas yoki mahsulot noto‘g‘ri bo‘lsa redirect bilan xato.
+- **Products/BoM:** Bo‘sh nom, mavjud mahsulot, noto‘g‘ri ingredient va hokazo — redirect bilan `?error=...`.
 
 ---
 
@@ -112,53 +122,52 @@ Shuningdek, **ixtiyoriy JSON API:** `GET /api/products`, `GET /api/orders` — m
 | Texnologiya | Versiya / qo‘llanilishi |
 |-------------|--------------------------|
 | **Python** | 3.10+ |
-| **FastAPI** | 0.109.x — HTTP routelar, Form, Depends, HTMLResponse, RedirectResponse |
-| **Uvicorn** | ASGI server, `--reload` rejimida ishlatiladi |
+| **FastAPI** | HTTP routelar, Form, Depends, Query, HTMLResponse, RedirectResponse |
+| **Uvicorn** | ASGI server, `--reload` |
 | **SQLAlchemy** | 2.x — deklarativ modellar, `select()`, `selectinload`, session boshqaruvi |
 | **psycopg2-binary** | PostgreSQL drayveri |
-| **python-dotenv** | `.env` dan `DATABASE_URL` o‘qish |
-| **Jinja2** | HTML shablonlar (FastAPI orqali) |
-| **python-multipart** | Form ma’lumotlari (Form(...)) uchun |
+| **python-dotenv** | `.env` dan `DATABASE_URL` |
+| **Jinja2** | HTML shablonlar |
+| **python-multipart** | Form ma’lumotlari |
 
 ### 3.2 Ma’lumotlar bazasi
 
-- **PostgreSQL** — loyiha bazasi: `Choco_factory`.
-- Ulanish: `DATABASE_URL` (`.env` yoki default: `postgresql://postgres:***@localhost:5432/Choco_factory`).
-- Jadvalyar: `products`, `bill_of_materials`, `manufacturing_orders` — `scripts/init_db.py` orqali `Base.metadata.create_all()` bilan yaratiladi.
-- Dastlabki ma’lumotlar: `scripts/seed_data.py` — mahsulotlar va BoM qatorlari.
+- **PostgreSQL** — baza: `Choco_factory`. Jadvalyar: `products`, `bill_of_materials`, `manufacturing_orders`. Seed: `scripts/seed_data.py`.
 
 ### 3.3 Frontend (UI)
 
-- **HTML5** — semantik struktura.
-- **Bootstrap 5** — CDN orqali: grid, kartalar, jadvallar, alert, tugmalar, formlar.
-- **Jinja2** — `base.html`, `index.html`, `orders.html`; bloklar va tsikllar.
-- Alohida JavaScript framework yo‘q — oddiy formlar va redirectlar.
+- **HTML5**, **Bootstrap 5** (CDN) — grid, kartalar, jadvallar, alert, tugmalar, formlar.
+- **Jinja2** — `base.html`, `index.html`, `orders.html`, `order_edit.html`, `products.html`, `product_new.html`, `product_bom.html`, `macros.html`.
+- **JavaScript** — navbar uchun `fetch('/api/stats')` va draft badge ko‘rsatish (minimal, framework yo‘q).
 
 ### 3.4 Loyiha tuzilishi (qisqacha)
 
 ```
 app/
-  config.py           # DATABASE_URL
-  database.py         # engine, SessionLocal, get_db, transactional_session
-  main.py             # FastAPI app, router ulash
+  config.py
+  database.py
+  main.py
   models/
-    product.py        # Product (ingredient / finished_good)
-    bill_of_material.py # BillOfMaterial (finished_product_id, component_id, quantity_per_unit)
-    manufacturing_order.py # ManufacturingOrder (product_id, quantity, status)
+    product.py
+    bill_of_material.py
+    manufacturing_order.py
   api/
-    routes.py         # Web UI + /api/products, /api/orders
+    routes.py         # Web UI + Products, Orders, Edit, BoM + /api/stats, /api/products, /api/orders
   services/
-    produce_service.py # produce_order(), InsufficientStockError
-  templates/          # base, index, orders
+    produce_service.py
+  templates/
+    base.html, index.html, orders.html, order_edit.html
+    products.html, product_new.html, product_bom.html
+    macros.html
 scripts/
-  init_db.py          # Jadvalyar yaratish
-  seed_data.py        # Mahsulotlar va BoM seed
+  init_db.py
+  seed_data.py
 ```
 
 ### 3.5 Ishga tushirish skriptlari
 
 - **start_backend.ps1** — venv aktivatsiya, `uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`.
-- **start_frontend.ps1** — backend javob beryaptimi tekshirib, `http://127.0.0.1:8000` ni brauzerda ochadi.
+- **start_frontend.ps1** — backend tekshirib, brauzerda ochish (8000 yoki 8001).
 
 ---
 
@@ -166,8 +175,8 @@ scripts/
 
 | Jihat | Tavsif |
 |-------|--------|
-| **Mazmun** | Kichik shokolad sexi uchun MRP MVP: mahsulotlar, BoM, ishlab chiqarish buyurtmasi va inventar logikasi. |
-| **Ishlashi** | Bitta atom tranzaksiyada produce; zaxira yetmasa — xato, o‘zgarishsiz; oddiy web UI orqali buyurtma yaratish va Produce. |
-| **Texnologiyalar** | Python, FastAPI, SQLAlchemy 2, PostgreSQL, Jinja2, Bootstrap 5; PowerShell skriptlar orqali lokal test. |
+| **Mazmun** | Kichik shokolad sexi uchun MRP MVP: mahsulotlar (ingredient + tayyor), BoM boshqaruvi, ishlab chiqarish buyurtmasi, Edit, Produce, inventar logikasi. |
+| **Ishlashi** | Bitta atom tranzaksiyada produce; zaxira yetmasa — xato, o‘zgarishsiz; web UI orqali buyurtma yaratish/tahrirlash va Produce; mahsulotlar va BoM CRUD. |
+| **Texnologiyalar** | Python, FastAPI, SQLAlchemy 2, PostgreSQL, Jinja2, Bootstrap 5; navbar draft badge uchun /api/stats. |
 
-Loyiha texnik talablarga javob beradi: BoM orqali mahsulot–komponent bog‘lanishi va har bir qator uchun miqdor, tranzaksiya yordamida yaxlitlik, aniq nomlar va modullar, zaxira yetmasligi va boshqa xatolarning to‘g‘ri qayta ishlashi.
+Loyiha BoM orqali mahsulot–komponent bog‘lanishi, tranzaksiya yordamida yaxlitlik, buyurtmani tahrirlash, mahsulotlar va BoM boshqaruvi, zaxira yetmasligi va boshqa xatolarning qayta ishlanishini qo‘llab-quvvatlaydi.

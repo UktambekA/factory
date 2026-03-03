@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}New Finished Good – The Chocolate Factory{% endblock %}
+{% block content %}
+  <h1 class="mb-4">Add Finished Good</h1>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <div class="card" style="max-width: 600px;">
+    <div class="card-body">
+      <form action="/products" method="post" class="row g-3">
+        <div class="col-12">
+          <label class="form-label">Product name</label>
+          <input type="text" name="name" class="form-control" placeholder="e.g. Dark Chocolate" required autofocus>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Bill of Materials</label>
+          <p class="text-muted small mb-2">Type ingredient names. New names will be created automatically with 0 stock.</p>
+          <div id="bom-rows" class="d-flex flex-column gap-2 mb-2"></div>
+          <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addRow()">+ Add ingredient</button>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-primary">Create</button>
+          <a href="/products" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let rowCount = 0;
+
+    function addRow() {
+      rowCount++;
+      const id = rowCount;
+      const div = document.createElement('div');
+      div.className = 'row g-2 align-items-center';
+      div.id = `bom-row-${id}`;
+      div.innerHTML = `
+        <div class="col">
+          <input type="text" name="component_names" class="form-control form-control-sm"
+                 placeholder="Ingredient name (e.g. Cocoa)" required>
+        </div>
+        <div class="col-auto">
+          <div class="input-group input-group-sm">
+            <input type="number" name="quantities" class="form-control" style="width:100px"
+                   step="0.1" min="0.1" placeholder="qty" required>
+            <span class="input-group-text">g/unit</span>
+          </div>
+        </div>
+        <div class="col-auto">
+          <button type="button" class="btn btn-outline-danger btn-sm"
+                  onclick="document.getElementById('bom-row-${id}').remove()">×</button>
+        </div>
+      `;
+      document.getElementById('bom-rows').appendChild(div);
+    }
+  </script>
+{% endblock %}

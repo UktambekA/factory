@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Products – The Chocolate Factory{% endblock %}
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0">Products</h1>
+    <a href="/products/new" class="btn btn-primary">+ Add finished good</a>
+  </div>
+
+  {% if created %}
+  <div class="alert alert-success alert-dismissible fade show" role="alert">
+    Done. Stock updated or product created.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+
+  <div class="card mb-4">
+    <div class="card-header">Ingredients</div>
+    <div class="card-body">
+      {% set ingredients = products | selectattr('product_type', 'eq', 'ingredient') | list %}
+      {% if ingredients %}
+      <form action="/products/ingredient" method="post" class="row g-2 align-items-end mb-3">
+        <div class="col">
+          <label class="form-label">Ingredient</label>
+          <select name="name" class="form-select" required>
+            <option value="">Select ingredient</option>
+            {% for i in ingredients %}
+            <option value="{{ i.name }}">{{ i.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col">
+          <label class="form-label">Add stock (g)</label>
+          <input type="number" name="amount" class="form-control" step="0.1" min="0" value="0">
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-outline-secondary">Restock</button>
+        </div>
+      </form>
+      {% endif %}
+      <table class="table table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Stock</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if ingredients %}
+          {% for p in ingredients %}
+          <tr>
+            <td>{{ p.name }}</td>
+            <td class="{{ 'text-danger fw-bold' if p.stock_on_hand == 0 else 'text-warning fw-semibold' if p.stock_on_hand < 100 else '' }}">
+              {{ "%.1f"|format(p.stock_on_hand) }}g
+              {% if p.stock_on_hand == 0 %}<span class="ms-1 badge bg-danger">Out of stock</span>
+              {% elif p.stock_on_hand < 100 %}<span class="ms-1 badge bg-warning text-dark">Low</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="2" class="text-center text-muted py-3">No ingredients yet.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Finished Goods</div>
+    <div class="card-body p-0">
+      <table class="table table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Stock</th>
+            <th>BoM</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set finished = products | selectattr('product_type', 'eq', 'finished_good') | list %}
+          {% if finished %}
+          {% for p in finished %}
+          <tr>
+            <td>{{ p.name }}</td>
+            <td>{{ "%.0f"|format(p.stock_on_hand) }} units</td>
+            <td>
+              <a href="/products/{{ p.id }}/bom" class="btn btn-sm btn-outline-secondary">
+                Manage BoM ({{ p.bom_components | length }})
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="3" class="text-center text-muted py-4">
+              No finished goods yet. <a href="/products/new">Add one →</a>
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}BoM: {{ product.name }} – The Chocolate Factory{% endblock %}
+{% block content %}
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <a href="/products" class="btn btn-outline-secondary btn-sm">← Products</a>
+    <h1 class="mb-0">Bill of Materials: {{ product.name }}</h1>
+  </div>
+
+  {% if created %}
+  <div class="alert alert-success alert-dismissible fade show" role="alert">
+    Product created. Now define its Bill of Materials below.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-danger alert-dismissible fade show" role="alert">
+    {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endif %}
+
+  <div class="card mb-4">
+    <div class="card-header">Components</div>
+    <div class="card-body p-0">
+      <table class="table table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Ingredient</th>
+            <th>Qty per unit (g)</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if product.bom_components %}
+          {% for b in product.bom_components %}
+          <tr>
+            <td>{{ b.component.name }}</td>
+            <td>{{ "%.1f"|format(b.quantity_per_unit) }}g</td>
+            <td>
+              <form action="/products/{{ product.id }}/bom/{{ b.id }}/delete" method="post" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Remove {{ b.component.name }} from BoM?')">Remove</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="3" class="text-center text-muted py-4">No components yet. Add one below.</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% if available_ingredients %}
+  <div class="card" style="max-width: 480px;">
+    <div class="card-header">Add component</div>
+    <div class="card-body">
+      <form action="/products/{{ product.id }}/bom" method="post" class="row g-3">
+        <div class="col-12">
+          <label class="form-label">Ingredient</label>
+          <select name="component_id" class="form-select" required>
+            <option value="">Select ingredient</option>
+            {% for i in available_ingredients %}
+            <option value="{{ i.id }}">{{ i.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Quantity per unit (g)</label>
+          <input type="number" name="quantity_per_unit" class="form-control" step="0.1" min="0.1" required>
+        </div>
+        <div class="col-12">
+          <button type="submit" class="btn btn-primary">Add component</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-muted">All available ingredients are already in this BoM.</p>
+  {% endif %}
+{% endblock %}

@@ -2,6 +2,8 @@
 import json
 from urllib.parse import quote, unquote
 
+from typing import List
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -164,6 +166,180 @@ def execute_produce(mo_id: int, request: Request):
         return RedirectResponse(url="/orders?produced=1", status_code=303)
     except (InsufficientStockError, ValueError) as e:
         return RedirectResponse(url="/orders?error=" + quote(str(e)), status_code=303)
+
+
+# ----- Product Management -----
+
+@router.get("/products", response_class=HTMLResponse)
+def products_page(request: Request, db: Session = Depends(get_db)):
+    """List all products."""
+    products = db.execute(select(Product).order_by(Product.product_type, Product.name)).scalars().all()
+    error = request.query_params.get("error")
+    if error:
+        error = unquote(error)
+    return templates.TemplateResponse(
+        "products.html",
+        {
+            "request": request,
+            "products": products,
+            "created": request.query_params.get("created"),
+            "error": error,
+        },
+    )
+
+
+@router.get("/products/new", response_class=HTMLResponse)
+def new_product_page(request: Request):
+    """Form to add a new finished good with inline BoM."""
+    error = request.query_params.get("error")
+    if error:
+        error = unquote(error)
+    return templates.TemplateResponse(
+        "product_new.html",
+        {"request": request, "error": error},
+    )
+
+
+@router.post("/products/ingredient")
+def restock_ingredient(
+    name: str = Form(...),
+    amount: float = Form(0.0),
+    db: Session = Depends(get_db),
+):
+    """Restock existing ingredient or create a new one if name not found."""
+    name = name.strip()
+    if not name:
+        return RedirectResponse(url="/products?error=" + quote("Name cannot be empty."), status_code=303)
+    if amount < 0:
+        return RedirectResponse(url="/products?error=" + quote("Amount cannot be negative."), status_code=303)
+    existing = db.execute(
+        select(Product).where(Product.name == name, Product.product_type == "ingredient")
+    ).scalar_one_or_none()
+    if existing:
+        existing.stock_on_hand += amount
+    else:
+        db.add(Product(name=name, product_type="ingredient", stock_on_hand=amount))
+    db.commit()
+    return RedirectResponse(url="/products?created=1", status_code=303)
+
+
+@router.post("/products")
+def create_product(
+    name: str = Form(...),
+    component_names: List[str] = Form([]),
+    quantities: List[float] = Form([]),
+    db: Session = Depends(get_db),
+):
+    """Create a new finished good; finds or creates each ingredient by name."""
+    name = name.strip()
+    if not name:
+        return RedirectResponse(url="/products/new?error=" + quote("Name cannot be empty."), status_code=303)
+    existing = db.execute(select(Product).where(Product.name == name)).scalar_one_or_none()
+    if existing:
+        return RedirectResponse(url="/products/new?error=" + quote(f"'{name}' already exists."), status_code=303)
+    product = Product(name=name, product_type="finished_good", stock_on_hand=0.0)
+    db.add(product)
+    db.flush()
+    for comp_name, qty in zip(component_names, quantities):
+        comp_name = comp_name.strip()
+        if not comp_name or qty <= 0:
+            continue
+        ingredient = db.execute(
+            select(Product).where(Product.name == comp_name, Product.product_type == "ingredient")
+        ).scalar_one_or_none()
+        if not ingredient:
+            ingredient = Product(name=comp_name, product_type="ingredient", stock_on_hand=0.0)
+            db.add(ingredient)
+            db.flush()
+        db.add(BillOfMaterial(finished_product_id=product.id, component_id=ingredient.id, quantity_per_unit=qty))
+    db.commit()
+    return RedirectResponse(url="/products?created=1", status_code=303)
+
+
+@router.get("/products/{product_id}/bom", response_class=HTMLResponse)
+def product_bom_page(product_id: int, request: Request, db: Session = Depends(get_db)):
+    """Manage Bill of Materials for a finished product."""
+    product = db.execute(
+        select(Product)
+        .where(Product.id == product_id)
+        .options(selectinload(Product.bom_components).selectinload(BillOfMaterial.component))
+    ).scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found.")
+    if product.product_type != "finished_good":
+        raise HTTPException(status_code=400, detail="BoM is only for finished products.")
+    ingredients = db.execute(
+        select(Product).where(Product.product_type == "ingredient").order_by(Product.name)
+    ).scalars().all()
+    used_ids = {b.component_id for b in product.bom_components}
+    available_ingredients = [i for i in ingredients if i.id not in used_ids]
+    error = request.query_params.get("error")
+    if error:
+        error = unquote(error)
+    return templates.TemplateResponse(
+        "product_bom.html",
+        {
+            "request": request,
+            "product": product,
+            "available_ingredients": available_ingredients,
+            "created": request.query_params.get("created"),
+            "error": error,
+        },
+    )
+
+
+@router.post("/products/{product_id}/bom")
+def add_bom_line(
+    product_id: int,
+    component_id: int = Form(...),
+    quantity_per_unit: float = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Add a component to a product's BoM."""
+    product = db.get(Product, product_id)
+    if not product or product.product_type != "finished_good":
+        raise HTTPException(status_code=404, detail="Finished product not found.")
+    component = db.get(Product, component_id)
+    if not component or component.product_type != "ingredient":
+        return RedirectResponse(
+            url=f"/products/{product_id}/bom?error=" + quote("Invalid ingredient selected."),
+            status_code=303,
+        )
+    if quantity_per_unit <= 0:
+        return RedirectResponse(
+            url=f"/products/{product_id}/bom?error=" + quote("Quantity must be positive."),
+            status_code=303,
+        )
+    existing = db.execute(
+        select(BillOfMaterial).where(
+            BillOfMaterial.finished_product_id == product_id,
+            BillOfMaterial.component_id == component_id,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return RedirectResponse(
+            url=f"/products/{product_id}/bom?error=" + quote("This ingredient is already in the BoM."),
+            status_code=303,
+        )
+    bom = BillOfMaterial(
+        finished_product_id=product_id,
+        component_id=component_id,
+        quantity_per_unit=quantity_per_unit,
+    )
+    db.add(bom)
+    db.commit()
+    return RedirectResponse(url=f"/products/{product_id}/bom", status_code=303)
+
+
+@router.post("/products/{product_id}/bom/{bom_id}/delete")
+def delete_bom_line(product_id: int, bom_id: int, db: Session = Depends(get_db)):
+    """Remove a component from a product's BoM."""
+    bom = db.get(BillOfMaterial, bom_id)
+    if not bom or bom.finished_product_id != product_id:
+        raise HTTPException(status_code=404, detail="BoM line not found.")
+    db.delete(bom)
+    db.commit()
+    return RedirectResponse(url=f"/products/{product_id}/bom", status_code=303)
 
 
 # ----- Optional JSON API -----
