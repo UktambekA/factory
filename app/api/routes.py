@@ -1,4 +1,6 @@
 """FastAPI routes for products, BoM, manufacturing orders, and produce action."""
+from urllib.parse import quote, unquote
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -8,16 +10,6 @@ from sqlalchemy.orm import Session, selectinload
 from app.database import get_db
 from app.models import BillOfMaterial, ManufacturingOrder, Product
 from app.services.produce_service import InsufficientStockError, produce_order
-
-
-def __quote(s: str) -> str:
-    from urllib.parse import quote
-    return quote(s)
-
-
-def __unquote(s: str) -> str:
-    from urllib.parse import unquote
-    return unquote(s)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -39,7 +31,7 @@ def index(request: Request, db: Session = Depends(get_db)):
     ).scalars().all()
     error = request.query_params.get("error")
     if error:
-        error = __unquote(error)
+        error = unquote(error)
     return templates.TemplateResponse(
         "index.html",
         {"request": request, "products": products, "orders": orders, "produced": request.query_params.get("produced"), "error": error},
@@ -95,7 +87,7 @@ def edit_order_page(mo_id: int, request: Request, db: Session = Depends(get_db))
     ).scalars().all()
     error = request.query_params.get("error")
     if error:
-        error = __unquote(error)
+        error = unquote(error)
     return templates.TemplateResponse(
         "order_edit.html",
         {"request": request, "order": order, "finished_products": finished_products, "error": error},
@@ -117,13 +109,13 @@ def update_order(
         raise HTTPException(status_code=400, detail="Cannot edit a produced order.")
     if quantity <= 0:
         return RedirectResponse(
-            url=f"/orders/{mo_id}/edit?error=" + __quote("Quantity must be positive."),
+            url=f"/orders/{mo_id}/edit?error=" + quote("Quantity must be positive."),
             status_code=303,
         )
     product = db.get(Product, product_id)
     if not product or product.product_type != "finished_good":
         return RedirectResponse(
-            url=f"/orders/{mo_id}/edit?error=" + __quote("Invalid product selected."),
+            url=f"/orders/{mo_id}/edit?error=" + quote("Invalid product selected."),
             status_code=303,
         )
     order.product_id = product_id
@@ -138,10 +130,8 @@ def execute_produce(mo_id: int, request: Request):
     try:
         produce_order(mo_id)
         return RedirectResponse(url="/?produced=1", status_code=303)
-    except InsufficientStockError as e:
-        return RedirectResponse(url="/?error=" + __quote(str(e)), status_code=303)
-    except ValueError as e:
-        return RedirectResponse(url="/?error=" + __quote(str(e)), status_code=303)
+    except (InsufficientStockError, ValueError) as e:
+        return RedirectResponse(url="/?error=" + quote(str(e)), status_code=303)
 
 
 # ----- Optional JSON API -----

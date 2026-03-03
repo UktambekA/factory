@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import status_badge %}
 {% block title %}Manufacturing Orders – The Chocolate Factory{% endblock %}
 {% block content %}
   <h1 class="mb-4">Manufacturing Orders</h1>
@@ -47,7 +48,7 @@
             <td>{{ o.id }}</td>
             <td>{{ o.product.name }}</td>
             <td>{{ "%.0f"|format(o.quantity) }}</td>
-            <td><span class="badge bg-{{ 'success' if o.status == 'produced' else 'warning' if o.status == 'draft' else 'danger' }}">{{ o.status }}</span></td>
+            <td>{{ status_badge(o.status) }}</td>
             <td>{{ o.created_at.strftime('%Y-%m-%d %H:%M') if o.created_at else '—' }}</td>
             <td>
               {% if o.status == 'produced' %}

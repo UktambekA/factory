@@ -59,16 +59,10 @@ def produce_order(mo_id: int) -> None:
                 shortfalls=shortfalls,
             )
 
-        # Deduct components (prevent negative stock by design)
+        # Deduct components
         for bom_line in product.bom_components:
-            needed = bom_line.quantity_per_unit * mo.quantity
             comp = bom_line.component
-            comp.stock_on_hand -= needed
-            if comp.stock_on_hand < 0:
-                raise InsufficientStockError(
-                    f"Stock would go negative for {comp.name}.",
-                    shortfalls=[(comp.name, needed, comp.stock_on_hand + needed)],
-                )
+            comp.stock_on_hand -= bom_line.quantity_per_unit * mo.quantity
             db.add(comp)
 
         # Add finished product

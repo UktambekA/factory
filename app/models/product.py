@@ -5,12 +5,6 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-class ProductType:
-    """Product classification for MRP."""
-    INGREDIENT = "ingredient"
-    FINISHED_GOOD = "finished_good"
-
-
 class Product(Base):
     """A product (ingredient or finished good) with name and stock (in grams for raw, units for finished)."""
     __tablename__ = "products"

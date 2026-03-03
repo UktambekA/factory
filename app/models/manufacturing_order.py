@@ -7,14 +7,13 @@ from app.database import Base
 
 
 class ManufacturingOrder(Base):
-    """Order to produce a given quantity of a finished product. Status: draft | produced | failed."""
+    """Order to produce a given quantity of a finished product. Status: draft | produced."""
     __tablename__ = "manufacturing_orders"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     quantity = Column(Float, nullable=False)  # number of units to produce
-    status = Column(String(32), nullable=False, default="draft")  # draft | produced | failed
-    error_message = Column(String(512), nullable=True)  # set when status = failed
+    status = Column(String(32), nullable=False, default="draft")  # draft | produced
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     produced_at = Column(DateTime(timezone=True), nullable=True)
 
